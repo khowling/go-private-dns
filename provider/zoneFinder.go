@@ -14,15 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package provider
 
-// supportedRecordType returns true only for supported record types.
-// Currently A, CNAME, SRV, and TXT record types are supported.
-func supportedRecordType(recordType string) bool {
-	switch recordType {
-	case "A", "CNAME", "SRV", "TXT":
-		return true
-	default:
-		return false
+import "strings"
+
+type zoneIDName map[string]string
+
+func (z zoneIDName) Add(zoneID, zoneName string) {
+	z[zoneID] = zoneName
+}
+
+func (z zoneIDName) FindZone(hostname string) (suitableZoneID, suitableZoneName string) {
+	for zoneID, zoneName := range z {
+		if hostname == zoneName || strings.HasSuffix(hostname, "."+zoneName) {
+			if suitableZoneName == "" || len(zoneName) > len(suitableZoneName) {
+				suitableZoneID = zoneID
+				suitableZoneName = zoneName
+			}
+		}
 	}
+	return
 }

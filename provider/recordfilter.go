@@ -14,32 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package provider
 
-import "strings"
-
-// ZoneIDFilter holds a list of zone ids to filter by
-type ZoneIDFilter struct {
-	zoneIDs []string
-}
-
-// NewZoneIDFilter returns a new ZoneIDFilter given a list of zone ids
-func NewZoneIDFilter(zoneIDs []string) ZoneIDFilter {
-	return ZoneIDFilter{zoneIDs}
-}
-
-// Match checks whether a zone matches one of the provided zone ids
-func (f ZoneIDFilter) Match(zoneID string) bool {
-	// An empty filter includes all zones.
-	if len(f.zoneIDs) == 0 {
+// supportedRecordType returns true only for supported record types.
+// Currently A, CNAME, SRV, and TXT record types are supported.
+func supportedRecordType(recordType string) bool {
+	switch recordType {
+	case "A", "CNAME", "SRV", "TXT":
 		return true
+	default:
+		return false
 	}
-
-	for _, id := range f.zoneIDs {
-		if strings.HasSuffix(zoneID, id) {
-			return true
-		}
-	}
-
-	return false
 }

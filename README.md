@@ -25,6 +25,12 @@ Now check your Private DNS Service, there should be 2 new A-records
 
 
 ### to build
+
+This uses the GO Module system.  To recreate the `go.mod` and `go.sum`
+* run `go mod init private-dns` to initialise the module files with the module definition of this project 'private-dns'
+* run `go get github.com/Azure/go-autorest@v12.2.0+incompatible` to resolve multiple versions issue
+
 ```
 go build
-```# go-private-dns
+```
+

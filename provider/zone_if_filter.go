@@ -14,24 +14,32 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package provider
 
 import "strings"
 
-type zoneIDName map[string]string
-
-func (z zoneIDName) Add(zoneID, zoneName string) {
-	z[zoneID] = zoneName
+// ZoneIDFilter holds a list of zone ids to filter by
+type ZoneIDFilter struct {
+	zoneIDs []string
 }
 
-func (z zoneIDName) FindZone(hostname string) (suitableZoneID, suitableZoneName string) {
-	for zoneID, zoneName := range z {
-		if hostname == zoneName || strings.HasSuffix(hostname, "."+zoneName) {
-			if suitableZoneName == "" || len(zoneName) > len(suitableZoneName) {
-				suitableZoneID = zoneID
-				suitableZoneName = zoneName
-			}
+// NewZoneIDFilter returns a new ZoneIDFilter given a list of zone ids
+func NewZoneIDFilter(zoneIDs []string) ZoneIDFilter {
+	return ZoneIDFilter{zoneIDs}
+}
+
+// Match checks whether a zone matches one of the provided zone ids
+func (f ZoneIDFilter) Match(zoneID string) bool {
+	// An empty filter includes all zones.
+	if len(f.zoneIDs) == 0 {
+		return true
+	}
+
+	for _, id := range f.zoneIDs {
+		if strings.HasSuffix(zoneID, id) {
+			return true
 		}
 	}
-	return
+
+	return false
 }
