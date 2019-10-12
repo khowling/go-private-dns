@@ -19,7 +19,7 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 
 	// log system
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"private-dns/endpoint"
 	"private-dns/plan"
@@ -35,7 +35,7 @@ type AzurePrivateProvider struct {
 }
 
 // NewAzurePrivateProvider - mimic the NewAzureProvider
-func NewAzurePrivateProvider (inCluster bool, resourceGroup string) (*AzurePrivateProvider, error) {
+func NewAzurePrivateProvider (inCluster bool, resourceGroup string, subId string) (*AzurePrivateProvider, error) {
 	
 	// set environment variable to file location: AZURE_AUTH_LOCATION=./azauth.json
 	var authorizer autorest.Authorizer
@@ -43,21 +43,17 @@ func NewAzurePrivateProvider (inCluster bool, resourceGroup string) (*AzurePriva
 	var subscriptionID string
 
 	if inCluster {
-		// Get Azure auth from Pod Identity Injecting ENV
+		klog.Info ("Get NewAuthorizerFromEnvironment (from Pod Identity)")
 		authorizer, err = auth.NewAuthorizerFromEnvironment()
-		if err != nil {
+		if err != nil || authorizer == nil {
+			klog.Errorf("failed NewAuthorizerFromEnvironment: %+v", authorizer)
 			return nil, fmt.Errorf("failed NewAuthorizerFromEnvironment: %+v", authorizer)
 		}
-
-		fs, err := auth.GetSettingsFromEnvironment()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read Azure authorizer filesettings: " + err.Error())
-		}
-		subscriptionID = fs.GetSubscriptionID()
+		subscriptionID = subId
 	} else {
 		// Get Azure auth from azfile.json
 		authorizer, err = auth.NewAuthorizerFromFile(azure.PublicCloud.ResourceManagerEndpoint)
-		if err != nil {
+		if err != nil ||  authorizer == nil {
 			return nil, fmt.Errorf("failed to read Azure authorizer with error: " + err.Error())
 		}
 
@@ -68,7 +64,7 @@ func NewAzurePrivateProvider (inCluster bool, resourceGroup string) (*AzurePriva
 		subscriptionID = fs.GetSubscriptionID()
 	}
 
-	
+	klog.Infof("Got Subscription %s", subscriptionID)
 
 	privateZonesClient := privatedns.NewPrivateZonesClientWithBaseURI (azure.PublicCloud.ResourceManagerEndpoint, subscriptionID)
 	privateZonesClient.Authorizer = authorizer
@@ -91,13 +87,14 @@ func (p *AzurePrivateProvider) privateZones() ([]privatedns.PrivateZone, error) 
 
 	var zones []privatedns.PrivateZone
 
+	klog.Infof("Call ListByResourceGroupComplete with rg %s", p.resourceGroup)
 	for list, err := p.privateZonesClient.ListByResourceGroupComplete(context.Background(), p.resourceGroup, nil); list.NotDone(); err = list.Next() {
 		if err != nil {
 			klog.Error(err, "error traverising RG list")
 		}
 
 		pzone := list.Value()
-		fmt.Printf("Got %v,  %T\n",  *pzone.Name, pzone)
+		klog.Infof("Got %v,  %T\n",  *pzone.Name, pzone)
 
 		if pzone.Name == nil {
 			continue
@@ -133,11 +130,11 @@ func (p *AzurePrivateProvider) Records() (endpoints []*endpoint.Endpoint, _ erro
 				continue
 			}
 
-			fmt.Printf("Got zone [%v], record type [%v], ttl [%v], name [%v]\n", *zone.Name, *precord.Type, *precord.TTL, *precord.Name)
+			klog.Infof("Got zone [%v], record type [%v], ttl [%v], name [%v]\n", *zone.Name, *precord.Type, *precord.TTL, *precord.Name)
 
 			recordType := strings.TrimLeft(*precord.Type, "Microsoft.Network/privateDnsZones/")
 			if !supportedRecordType(recordType) {
-				fmt.Println("dns record type skipping " + recordType)
+				klog.Infof("dns record type skipping " + recordType)
 				continue
 			}
 

@@ -10,7 +10,7 @@ import (
 	
 
 	// log system
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"private-dns/endpoint"
 	"private-dns/plan"
 	"private-dns/provider"
@@ -67,7 +67,10 @@ func getKubernetesClient(inCluster bool) kubernetes.Interface {
 // main code path
 func main() {
 
+	flag.Set("alsologtostderr", "true")
+
 	rg := flag.String("azure-resource-group", "", "Resource Group containing your Azure Private DNS Zone resource")
+	subID := flag.String("azure-subscription-id", "", "Subscription Id for in-cluster pod-identity")
 	inCluster :=  flag.Bool("in-cluster", true , "are we running in the cluster?")
 
 	flag.Parse()
@@ -79,7 +82,7 @@ func main() {
         os.Exit(1)
 	}
 
-	p, err := provider.NewAzurePrivateProvider(*inCluster, *rg)
+	p, err := provider.NewAzurePrivateProvider(*inCluster, *rg, *subID)
 	if err != nil {
 		klog.Fatalf("failed to create NewAzureProvider: %v", err)
 	}

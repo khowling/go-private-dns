@@ -2,24 +2,25 @@
 
 This repo is work-in-progress, working on adding private-dns support to the exnteral-dns project, but having difficulty getting external-dns to build, so all the code is here until I create a working PR
 
-## To build
+## To build (optional)
 
-To build the container
+To build and run locally
+```
+$ go build
+$ AZURE_AUTH_LOCATION=./azauth.json ./private-dns  -azure-resource-group="kh-aks" -in-cluster=false
+```
+
+To build & push a container for deploying into kubenetes, the repo contains a multi stage docker build process 
 
 ```
 $ docker build .
-```
-
-To push to Repo
-
-```
 $ docker login
 $ docker tag <IMAGE ID>  <repo>/<project>:<version>
 $ docker push <repo>/<project>:<version>
 ```
 
 
-## to install
+## To install into AKS
 
 
 

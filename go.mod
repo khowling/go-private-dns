@@ -14,4 +14,5 @@ require (
 	k8s.io/apimachinery v0.0.0-20190223001710-c182ff3b9841
 	k8s.io/client-go v8.0.0+incompatible
 	k8s.io/klog v0.0.0-20190306015804-8e90cee79f82
+	k8s.io/klog/v2 v2.0.0-20190919174302-ab80cd2723c2
 )

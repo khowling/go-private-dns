@@ -2,10 +2,10 @@
 
 # Accept the Go version for the image to be set as a build argument.
 # Default to Go 1.11
-ARG GO_VERSION=1.13
+ARG GO_VERSION=1.12
 
 # First stage: build the executable.
-FROM golang:${GO_VERSION}-alpine AS builder
+FROM golang:${GO_VERSION} AS builder
 
 # Create the user and group files that will be used in the running container to
 # run the process as an unprivileged user.
