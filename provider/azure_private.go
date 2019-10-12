@@ -9,6 +9,8 @@ import (
 	// https://godoc.org/github.com/Azure/azure-sdk-for-go/services/privatedns/mgmt/2018-09-01/privatedns
 	"github.com/Azure/azure-sdk-for-go/services/privatedns/mgmt/2018-09-01/privatedns"
 	
+	"github.com/Azure/go-autorest/autorest"
+
 	// using environment-based authentication, call the NewAuthorizerFromEnvironment function to get your authorizer object.
 	"github.com/Azure/go-autorest/autorest/azure/auth"
 
@@ -17,30 +19,12 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 
 	// log system
-	log "github.com/sirupsen/logrus"
+	"k8s.io/klog"
 
-	"github.com/kubernetes-incubator/external-dns/endpoint"
-	"github.com/kubernetes-incubator/external-dns/plan"
-
+	"private-dns/endpoint"
+	"private-dns/plan"
 )
 
-/*
-// PrivateZonesClient is an interface of privatedns.PrivateZonesClient that can be stubbed for testing.
-type PrivateZonesClient interface {
-	ListByResourceGroupComplete(ctx context.Context, resourceGroupName string, top *int32) (result privatedns.PrivateZoneListResultIterator, err error)
-}
-
-// RecordType this is
-type RecordType string
-
-// PrivateRecordsClient is an interface of dns.RecordClient that can be stubbed for testing.
-type PrivateRecordsClient interface {
-	ListComplete(ctx context.Context, resourceGroupName string, privateZoneName string, top *int32, recordsetnamesuffix string) (result privatedns.RecordSetListResultIterator, err error)
-	Delete(ctx context.Context, resourceGroupName string, privateZoneName string, recordType RecordType, relativeRecordSetName string, ifMatch string) (result autorest.Response, err error)
-	CreateOrUpdate(ctx context.Context, resourceGroupName string, privateZoneName string, recordType privatedns.RecordType, relativeRecordSetName string, parameters privatedns.RecordSet, ifMatch string, ifNoneMatch string) (result privatedns.RecordSet, err error)
-
-}
-*/
 
 // AzurePrivateProvider implements the DNS provider for Microsoft's Azure cloud platform.
 type AzurePrivateProvider struct {
@@ -48,37 +32,55 @@ type AzurePrivateProvider struct {
 	resourceGroup string
 	privateZonesClient  privatedns.PrivateZonesClient
 	privateRecordsClient       privatedns.RecordSetsClient
-	domainFilter  DomainFilter
-	zoneIDFilter DomainFilter
 }
 
 // NewAzurePrivateProvider - mimic the NewAzureProvider
-func NewAzurePrivateProvider (testDomainFilter string) (*AzurePrivateProvider, error) {
+func NewAzurePrivateProvider (inCluster bool, resourceGroup string) (*AzurePrivateProvider, error) {
 	
 	// set environment variable to file location: AZURE_AUTH_LOCATION=./azauth.json
-	authorizer, err := auth.NewAuthorizerFromFile(azure.PublicCloud.ResourceManagerEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read Azure authorizer with error: " + err.Error())
+	var authorizer autorest.Authorizer
+	var err error
+	var subscriptionID string
+
+	if inCluster {
+		// Get Azure auth from Pod Identity Injecting ENV
+		authorizer, err = auth.NewAuthorizerFromEnvironment()
+		if err != nil {
+			return nil, fmt.Errorf("failed NewAuthorizerFromEnvironment: %+v", authorizer)
+		}
+
+		fs, err := auth.GetSettingsFromEnvironment()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read Azure authorizer filesettings: " + err.Error())
+		}
+		subscriptionID = fs.GetSubscriptionID()
+	} else {
+		// Get Azure auth from azfile.json
+		authorizer, err = auth.NewAuthorizerFromFile(azure.PublicCloud.ResourceManagerEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read Azure authorizer with error: " + err.Error())
+		}
+
+		fs, err := auth.GetSettingsFromFile()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read Azure authorizer filesettings: " + err.Error())
+		}
+		subscriptionID = fs.GetSubscriptionID()
 	}
 
-	fs, err := auth.GetSettingsFromFile()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read Azure authorizer filesettings: " + err.Error())
-	}
+	
 
-	privateZonesClient := privatedns.NewPrivateZonesClientWithBaseURI (azure.PublicCloud.ResourceManagerEndpoint, fs.GetSubscriptionID())
+	privateZonesClient := privatedns.NewPrivateZonesClientWithBaseURI (azure.PublicCloud.ResourceManagerEndpoint, subscriptionID)
 	privateZonesClient.Authorizer = authorizer
 
-	privateRecordsClient := privatedns.NewRecordSetsClientWithBaseURI(azure.PublicCloud.ResourceManagerEndpoint, fs.GetSubscriptionID())
+	privateRecordsClient := privatedns.NewRecordSetsClientWithBaseURI(azure.PublicCloud.ResourceManagerEndpoint, subscriptionID)
 	privateRecordsClient.Authorizer = authorizer
 
-
 	provider := &AzurePrivateProvider{
-		resourceGroup:  "kh-aks-arm1",
+		resourceGroup:  resourceGroup,
 		dryRun: false,
 		privateZonesClient: privateZonesClient,
 		privateRecordsClient: privateRecordsClient,
-		domainFilter: DomainFilter{[]string{strings.ToLower(strings.TrimSuffix(strings.TrimSpace(testDomainFilter), "."))}, []string{}},
 	}
 
 	return provider, nil
@@ -91,24 +93,15 @@ func (p *AzurePrivateProvider) privateZones() ([]privatedns.PrivateZone, error) 
 
 	for list, err := p.privateZonesClient.ListByResourceGroupComplete(context.Background(), p.resourceGroup, nil); list.NotDone(); err = list.Next() {
 		if err != nil {
-			log.Error(err, "error traverising RG list")
+			klog.Error(err, "error traverising RG list")
 		}
 
 		pzone := list.Value()
-		fmt.Printf("Matching %v, with %v,  %T\n", p.domainFilter.filters, *pzone.Name, pzone)
-
+		fmt.Printf("Got %v,  %T\n",  *pzone.Name, pzone)
 
 		if pzone.Name == nil {
 			continue
 		}
-
-		if !p.domainFilter.Match(*pzone.Name) {
-			continue
-		}
-
-		// if !p.zoneIDFilter.Match(*pzone.ID) {
-		// 	continue
-		// }
 
 		zones = append(zones, pzone)
 	}
@@ -130,13 +123,13 @@ func (p *AzurePrivateProvider) Records() (endpoints []*endpoint.Endpoint, _ erro
 
 		for list, err := p.privateRecordsClient.ListComplete (context.Background(), p.resourceGroup, *zone.Name, nil, ""); list.NotDone(); err = list.Next() {
 			if err != nil {
-				log.Error(err, "error traverising RG list")
+				klog.Error(err, "error traverising RG list")
 			}
 			
 			precord := list.Value()
 
 			if precord.Name == nil || precord.Type == nil {
-				log.Error("Skipping invalid record set with nil name or type.")
+				klog.Error("Skipping invalid record set with nil name or type.")
 				continue
 			}
 
@@ -151,7 +144,7 @@ func (p *AzurePrivateProvider) Records() (endpoints []*endpoint.Endpoint, _ erro
 			name := formatAzureDNSName(*precord.Name, *zone.Name)
 			targets := extractAzureTargets(&precord)
 			if len(targets) == 0 {
-				log.Errorf("Failed to extract targets for '%s' with type '%s'.", name, recordType)
+				klog.Errorf("Failed to extract targets for '%s' with type '%s'.", name, recordType)
 				continue
 			}
 
@@ -161,7 +154,7 @@ func (p *AzurePrivateProvider) Records() (endpoints []*endpoint.Endpoint, _ erro
 			}
 
 			ep := endpoint.NewEndpointWithTTL(name, recordType, endpoint.TTL(ttl), targets...)
-			log.Debugf(
+			klog.Infof(
 				"Found %s record for '%s' with target '%s'.",
 				ep.RecordType,
 				ep.DNSName,
@@ -210,11 +203,11 @@ func (p *AzurePrivateProvider) deleteRecords(deleted azureChangeMap) {
 		for _, endpoint := range endpoints {
 			name := p.recordSetNameForZone(zone, endpoint)
 			if p.dryRun {
-				log.Infof("Would delete %s record named '%s' for Azure DNS zone '%s'.", endpoint.RecordType, name, zone)
+				klog.Infof("Would delete %s record named '%s' for Azure DNS zone '%s'.", endpoint.RecordType, name, zone)
 			} else {
-				log.Infof("Deleting %s record named '%s' for Azure DNS zone '%s'.", endpoint.RecordType, name, zone)
+				klog.Infof("Deleting %s record named '%s' for Azure DNS zone '%s'.", endpoint.RecordType, name, zone)
 				if _, err := p.privateRecordsClient.Delete(context.Background(), p.resourceGroup, zone, privatedns.RecordType(endpoint.RecordType), name, ""); err != nil {
-					log.Errorf(
+					klog.Errorf(
 						"Failed to delete %s record named '%s' for Azure DNS zone '%s': %v",
 						endpoint.RecordType,
 						name,
@@ -232,7 +225,7 @@ func (p *AzurePrivateProvider) updateRecords(updated azureChangeMap) {
 		for _, endpoint := range endpoints {
 			name := p.recordSetNameForZone(zone, endpoint)
 			if p.dryRun {
-				log.Infof(
+				klog.Infof(
 					"Would update %s record named '%s' to '%s' for Azure DNS zone '%s'.",
 					endpoint.RecordType,
 					name,
@@ -242,7 +235,7 @@ func (p *AzurePrivateProvider) updateRecords(updated azureChangeMap) {
 				continue
 			}
 
-			log.Infof(
+			klog.Infof(
 				"Updating %s record named '%s' to '%s' for Azure DNS zone '%s'.",
 				endpoint.RecordType,
 				name,
@@ -263,7 +256,7 @@ func (p *AzurePrivateProvider) updateRecords(updated azureChangeMap) {
 					"")
 			}
 			if err != nil {
-				log.Errorf(
+				klog.Errorf(
 					"Failed to update %s record named '%s' to '%s' for DNS zone '%s': %v",
 					endpoint.RecordType,
 					name,
@@ -346,7 +339,7 @@ func (p *AzurePrivateProvider) mapChanges(zones []privatedns.PrivateZone, change
 		if zone == "" {
 			if _, ok := ignored[change.DNSName]; !ok {
 				ignored[change.DNSName] = true
-				log.Infof("Ignoring changes to '%s' because a suitable Azure DNS zone was not found.", change.DNSName)
+				klog.Infof("Ignoring changes to '%s' because a suitable Azure DNS zone was not found.", change.DNSName)
 			}
 			return
 		}

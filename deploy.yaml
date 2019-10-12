@@ -1,0 +1,18 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: private-dns
+spec:
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: private-dns
+        aadpodidbinding: kh-c2-privatedns
+    spec:
+      containers:
+      - name: private-dns
+        image: khowling/private-dns:0.1
+        args:
+        - --azure-resource-group=kh-aks
