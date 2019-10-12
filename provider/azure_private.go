@@ -87,6 +87,7 @@ func (p *AzurePrivateProvider) privateZones() ([]privatedns.PrivateZone, error) 
 
 	var zones []privatedns.PrivateZone
 
+	// The API https://docs.microsoft.com/en-us/rest/api/dns/privatedns/privatezones/listbyresourcegroup
 	klog.Infof("Call ListByResourceGroupComplete with rg %s", p.resourceGroup)
 	for list, err := p.privateZonesClient.ListByResourceGroupComplete(context.Background(), p.resourceGroup, nil); list.NotDone(); err = list.Next() {
 		if err != nil {

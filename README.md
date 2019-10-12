@@ -7,7 +7,7 @@ This repo is work-in-progress, working on adding private-dns support to the exnt
 To build and run locally
 ```
 $ go build
-$ AZURE_AUTH_LOCATION=./azauth.json ./private-dns  -azure-resource-group="kh-aks" -in-cluster=false
+$ AZURE_AUTH_LOCATION=./azauth.json AZURE_GO_SDK_LOG_LEVEL=DEBUG ./private-dns  -azure-resource-group="kh-aks" -in-cluster=false
 ```
 
 To build & push a container for deploying into kubenetes, the repo contains a multi stage docker build process 

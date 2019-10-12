@@ -50,7 +50,10 @@ spec:
       serviceAccountName: private-dns
       containers:
       - name: private-dns
-        image: khowling/private-dns:0.4
+        image: khowling/private-dns:0.5
+        env:
+        - name: AZURE_GO_SDK_LOG_LEVEL
+          value: "DEBUG"
         args:
         - --azure-resource-group=kh-aks
         - --azure-subscription-id=95efa97a-9b5d-4f74-9f75-a3396e23344d

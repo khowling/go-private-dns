@@ -1,18 +1,14 @@
 module private-dns
 
-go 1.12
+go 1.13
 
 require (
-	github.com/Azure/azure-sdk-for-go v33.4.0+incompatible
-	github.com/Azure/go-autorest v12.2.0+incompatible // indirect
-	github.com/Azure/go-autorest/autorest v0.9.1
-	github.com/Azure/go-autorest/autorest/azure/auth v0.3.0
+	github.com/Azure/azure-sdk-for-go v34.1.0+incompatible
+	github.com/Azure/go-autorest/autorest v0.9.2
+	github.com/Azure/go-autorest/autorest/azure/auth v0.4.0
 	github.com/Azure/go-autorest/autorest/to v0.3.0
-	github.com/kubernetes-incubator/external-dns v0.5.17
-	github.com/sirupsen/logrus v1.4.2
-	k8s.io/api v0.0.0-20190503184017-f1b257a4ce96
-	k8s.io/apimachinery v0.0.0-20190223001710-c182ff3b9841
-	k8s.io/client-go v8.0.0+incompatible
-	k8s.io/klog v0.0.0-20190306015804-8e90cee79f82
+	k8s.io/api v0.0.0-20191010143144-fbf594f18f80
+	k8s.io/apimachinery v0.0.0-20191006235458-f9f2f3f8ab02
+	k8s.io/client-go v0.0.0-20191010200049-172b42569cca
 	k8s.io/klog/v2 v2.0.0-20190919174302-ab80cd2723c2
 )
