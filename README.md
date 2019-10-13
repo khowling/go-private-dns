@@ -5,10 +5,23 @@ This repo is work-in-progress, working on adding private-dns support to the exnt
 ## To build (optional)
 
 To build and run locally
+
+Build the binary
 ```
 $ go build
+```
+
+Create a Service Principle (SPN), and a auth file, and grant the SPN the role to list Zones in the resource group, and add DNS records to the zone
+```
+az ad sp create-for-rbac --sdk-auth > azauth.json
+```
+
+Run the program:
+
+```
 $ AZURE_AUTH_LOCATION=./azauth.json AZURE_GO_SDK_LOG_LEVEL=DEBUG ./private-dns  -azure-resource-group="kh-aks" -in-cluster=false
 ```
+
 
 To build & push a container for deploying into kubenetes, the repo contains a multi stage docker build process 
 
@@ -22,7 +35,7 @@ $ docker push <repo>/<project>:<version>
 
 ## To install into AKS
 
-
+### Create the DNS Zone
 
 Create a Private DNS Zone in a Resource Group https://docs.microsoft.com/en-us/azure/dns/private-dns-overview
 Provide a name (eg 'my.akszone.private')
@@ -36,32 +49,47 @@ NOTE: Note down the resource id
 "id": "/subscriptions/<sub>/resourceGroups/<group>/providers/Microsoft.Network/privateDnsZones/<zone>",
 ```
 
+### Create The Identity private-dns will use to update the DNS records in Azure
 
 Install pod-identity into your cluster, details here: https://github.com/Azure/aad-pod-identity#getting-started
-(Follow instructions for steps 1-6
-
-Update `deploy.yaml` with you build image
-
-```
-kubectl deploy -f deploy.yaml
-```
+(Following instructions for steps 1-6).  The following assumes your Azure Identity is called `kh-c2-privatedns`.
 
 
-### to run
-
-
-
-
-Create a Service Principle, and a auth file
-```
-az ad sp create-for-rbac --sdk-auth > azauth.json
-```
-
-Create Role Assignment for the role `Private DNS Zone Contributor` on the Private DNS resource for the service principle
+Create Role Assignment for the role `Private DNS Zone Contributor` on the Private DNS resource for the Managed Identity
 
 ```
-az role assignment create --assignee-principal-type ServicePrincipal --assignee-object-id  <sp object id> --scope <private zone resource id> --role b12aa53e-6015-4669-85d0-8515ebb3ae7f
+az role assignment create --assignee-principal-type ServicePrincipal --assignee-object-id  <managed-identity-objectID> --scope <private-zone-resource-id> --role b12aa53e-6015-4669-85d0-8515ebb3ae7f
 ```
+
+
+Create Role Assignment for the role `Reader` on the resource group for the Managed Identity
+
+```
+az role assignment create --assignee-principal-type ServicePrincipal --assignee-object-id  <managed-identity-objectID> --scope <resource-group-resource-id> --role acdd72a7-3385-48ef-bd42-f606fba81ae7
+```
+
+### Deploy private-dns into your cluster
+
+
+Update `deploy.yaml` with you build image, resource group and subscription ID
+
+```
+kubectl apply -f deploy.yaml
+```
+
+
+### To Test
+
+Deploy a service with the annotations (modify the FQFN annotation to match your DNS Zone)
+```
+kubectl apply -f example/
+```
+
+
+
+
+
+
 
 Now run the program, passing in your Private DNS Zone domain:
 
@@ -92,7 +120,7 @@ spec:
 
 This uses the GO Module system.  To recreate the `go.mod` and `go.sum`
 * run `go mod init private-dns` to initialise the module files with the module definition of this project 'private-dns'
-* run `go get github.com/Azure/go-autorest@v12.2.0+incompatible` to resolve multiple versions issue
+* run `go get k8s.io/client-go@master` to resolve multiple versions issue
 
 ```
 go build

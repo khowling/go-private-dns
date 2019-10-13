@@ -50,7 +50,7 @@ spec:
       serviceAccountName: private-dns
       containers:
       - name: private-dns
-        image: khowling/private-dns:0.5
+        image: khowling/private-dns:0.4
         env:
         - name: AZURE_GO_SDK_LOG_LEVEL
           value: "DEBUG"
