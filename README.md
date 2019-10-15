@@ -53,8 +53,8 @@ IMPORTANT: Using the `deploy.yaml` file in the root of this repo, update the fil
         - name: AZURE_GO_SDK_LOG_LEVEL
           value: "DEBUG"
         args:
-        - --azure-resource-group=kh-aks
-        - --azure-subscription-id=95efa97a-9b5d-4f74-9f75-a3396e23344d
+        - --azure-resource-group=<<rg>>
+        - --azure-subscription-id=<<subid>>
 ```
 
 Now deploy into your cluster
