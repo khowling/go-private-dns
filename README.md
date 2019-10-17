@@ -1,6 +1,6 @@
-### Purpose
+## Purpose
 
-Allows an Internal LoadBalancer AKS Service to automatically register a DNS entry in Azure's Private DNS Zone
+To allow an Internal LoadBalancer AKS Service to automatically register a DNS entry in Azure's Private DNS Zone based on Service annotations
 
 
 ## To install into AKS
