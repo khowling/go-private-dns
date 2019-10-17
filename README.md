@@ -1,6 +1,6 @@
-### Temporary repo
+### Purpose
 
-This repo is work-in-progress, working on adding private-dns support to the exnteral-dns project, but having difficulty getting external-dns to build, so all the code is here until I create a working PR
+Allows an Internal LoadBalancer AKS Service to automatically register a DNS entry in Azure's Private DNS Zone
 
 
 ## To install into AKS
