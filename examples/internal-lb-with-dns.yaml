@@ -10,4 +10,4 @@ spec:
   ports:
   - port: 80
   selector:
-    app: internal-app1
+    run: internal-app1
