@@ -1,9 +1,13 @@
 ## Purpose
 
-To allow an Internal LoadBalancer AKS Service to automatically register a DNS entry in Azure's Private DNS Zone based on Service annotations
+To allow AKS Service/Ingress to automatically register a DNS entry in Azure's managed DNS Zones.
+
+The project can operate in 1 of 2 modes, see the `examples` folder for yaml examples:
+ * if `-public-zone=false` (default), this mode will watch for kubenetes `LoadBalancer` type Services with the annotation to use a internal load balancer (private frontend IP) `service.beta.kubernetes.io/azure-load-balancer-internal: "true"` & the annotation with the required DNS FQDN `service.beta.kubernetes.io/azure-dns-zone-fqdn`.  If a matching `Azure Private DNS zone` zone is found in the resource group indicated in the flag `-azure-resource-group`, a DNS record is created in that zone
+ * if `-public-zone=true`, this mode will watch for kubenetes nginx Ingress objects with the annotation  `kubernetes.io/ingress.class: "nginx"`.  If that Ingress includes a hosts FQDN, and a matching `Azure DNS zone` top-level zone is found in the resource group indicated in the flag `-azure-resource-group`, a DNS record is created in that zone
 
 
-## To install into AKS
+## To install into AKS (private zone example)
 
 ### Create the DNS Zone
 
@@ -55,6 +59,7 @@ IMPORTANT: Using the `deploy.yaml` file in the root of this repo, update the fil
         args:
         - --azure-resource-group=<<rg>>
         - --azure-subscription-id=<<subid>>
+        
 ```
 
 Now deploy into your cluster
@@ -74,7 +79,7 @@ metadata:
   name: internal-app1
   annotations:
     service.beta.kubernetes.io/azure-load-balancer-internal: "true"
-    service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn: "internal-app1.my.akszone.private"
+    service.beta.kubernetes.io/azure-dns-zone-fqdn: "internal-app1.my.akszone.private"
 ```
 
 Now deploy the example service
@@ -103,7 +108,7 @@ az ad sp create-for-rbac --sdk-auth > azauth.json
 Run the program locally:
 
 ```
-$ AZURE_AUTH_LOCATION=./azauth.json AZURE_GO_SDK_LOG_LEVEL=DEBUG ./private-dns  -azure-resource-group="kh-aks" -in-cluster=false
+$ AZURE_AUTH_LOCATION=./azauth.json AZURE_GO_SDK_LOG_LEVEL=DEBUG ./private-dns  -azure-resource-group="kh-aks" -in-cluster=false -public-zone=false
 ```
 
 ### To build a new Image
@@ -120,5 +125,5 @@ $ docker push <repo>/<project>:<version>
 To run the image locally
 
 ```
-docker run --env AZURE_AUTH_LOCATION=./azauth.json khowling/private-dns:0.4  -azure-resource-group="kh-aks" -in-cluster=false
+docker run --env AZURE_AUTH_LOCATION=./azauth.json khowling/private-dns:0.4  -azure-resource-group="kh-aks" -in-cluster=false -public-zone=false
 ```

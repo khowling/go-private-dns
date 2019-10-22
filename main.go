@@ -1,25 +1,21 @@
-
 package main
 
 // IMPORTANT: requires : export GO111MODULE=on
 import (
 	"os"
-	"context"
 	"fmt"
 	"flag"
 	
 
 	// log system
 	"k8s.io/klog/v2"
-	"private-dns/endpoint"
-	"private-dns/plan"
-	"private-dns/provider"
 
 
 	"os/signal"
 	"syscall"
 
 	api_v1 "k8s.io/api/core/v1"
+	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
@@ -27,7 +23,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/workqueue"
+
+	"private-dns/handler"
 )
 
 
@@ -72,6 +69,7 @@ func main() {
 	rg := flag.String("azure-resource-group", "", "Resource Group containing your Azure Private DNS Zone resource")
 	subID := flag.String("azure-subscription-id", "", "Subscription Id for in-cluster pod-identity")
 	inCluster :=  flag.Bool("in-cluster", true , "are we running in the cluster?")
+	publicZone :=  flag.Bool("public-zone", false , "Use a Public DNS Zone")
 
 	flag.Parse()
 
@@ -82,145 +80,84 @@ func main() {
         os.Exit(1)
 	}
 
-	p, err := provider.NewAzurePrivateProvider(*inCluster, *rg, *subID)
-	if err != nil {
-		klog.Fatalf("failed to create NewAzureProvider: %v", err)
+	var dnshandler handler.Handler
+	var err error
+	if *publicZone {
+		dnshandler, err = handler.NewIngressHandler (*inCluster, *rg, *subID)
+	} else {
+		dnshandler, err = handler.NewDNSHandler(*inCluster, *rg, *subID)
+		
 	}
 
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: cannot initialise handler, %v\n", err)
+        os.Exit(1)
+	}
 
 	// get the Kubernetes client for connectivity
 	client := getKubernetesClient(*inCluster)
 
-	// create the informer so that we can not only list resources
-	// but also watch them for all pods in the default namespace
-	informer := cache.NewSharedIndexInformer(
-		// the ListWatch contains two different functions that our
-		// informer requires: ListFunc to take care of listing and watching
-		// the resources we want to handle
-		&cache.ListWatch{
-			ListFunc: func(options meta_v1.ListOptions) (runtime.Object, error) {
-				// list all of the pods (core resource) in the deafult namespace
-				return client.CoreV1().Services(meta_v1.NamespaceDefault).List(options)
+	// Informer/SharedInformer watches for changes on the current state of Kubernetes objects 
+	// and sends events to Workqueue where events are then popped up by worker(s) to process.
+
+	// the SharedInformer helps to create a single shared cache among controllers.  
+	// cached resources won't be duplicated and by doing that, the memory overhead of the system is reduced
+
+	// repeatedly retrieving information from the API server can become expensive. Thus, in order to get 
+	// and list objects multiple times in code, Kubernetes developers end up using cache which has already 
+	// been provided by the client-go library
+
+	// Indexer is a storage interface that lets you list objects using multiple indexing functions
+
+
+	// The client-go library provides the "Listwatcher" interface that performs an initial list and starts a watch on a particular resource
+
+	// All of these things are consumed in Informer.
+
+	var controller *Controller
+	if *publicZone {
+		// Public Zone, listen for Ingress
+		ingressInformer := cache.NewSharedIndexInformer(
+			&cache.ListWatch{
+				ListFunc: func(options meta_v1.ListOptions) (runtime.Object, error) {
+
+					return client.ExtensionsV1beta1().Ingresses("").List(options)
+				},
+				WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
+
+					return client.ExtensionsV1beta1().Ingresses("").Watch(options)
+				},
 			},
-			WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
-				// watch all of the pods (core resource) in the default namespace
-				return client.CoreV1().Services(meta_v1.NamespaceDefault).Watch(options)
+			&extensionsv1beta1.Ingress{},
+			0,             // no resync (period of 0)
+			cache.Indexers{},
+		)
+
+		controller = NewController(client, ingressInformer, dnshandler)
+	
+	} else {
+		// Private Zone, listen for Service
+		serviceInformer := cache.NewSharedIndexInformer(
+			// the ListWatch contains two different functions that our
+			// informer requires: ListFunc to take care of listing and watching
+			// the resources we want to handle
+			&cache.ListWatch{
+				ListFunc: func(options meta_v1.ListOptions) (runtime.Object, error) {
+					// list all of the pods (core resource) in the deafult namespace
+					return client.CoreV1().Services(meta_v1.NamespaceDefault).List(options)
+				},
+				WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
+					// watch all of the pods (core resource) in the default namespace
+					return client.CoreV1().Services(meta_v1.NamespaceDefault).Watch(options)
+				},
 			},
-		},
-		&api_v1.Service{}, // the target type (Service)
-		0,             // no resync (period of 0)
-		cache.Indexers{},
-	)
+			&api_v1.Service{}, // the target type (Service)
+			0,             // no resync (period of 0)
+			cache.Indexers{},
+		)
+		
+		controller = NewController(client, serviceInformer, dnshandler)
 
-	// create a new queue so that when the informer gets a resource that is either
-	// a result of listing or watching, we can add an idenfitying key to the queue
-	// so that it can be handled in the handler
-	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
-
-	// add event handlers to handle the three types of events for resources:
-	//  - adding new resources
-	//  - updating existing resources
-	//  - deleting resources
-	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			// convert the resource object into a key (in this case
-			// we are just doing it in the format of 'namespace/name')
-			key, err := cache.MetaNamespaceKeyFunc(obj)
-
-			klog.Infof("Create Service: %s", key)
-
-			//newS := obj.(*api_v1.Service)
-			//newIP := ""
-			//if len(newS.Status.LoadBalancer.Ingress)>0 { newIP =  newS.Status.LoadBalancer.Ingress[0].IP }
-			
-			// This only runs on process Startup, so can confirm here if required?!
-			//klog.Printf("got: %v,  %s", newS.Annotations, newIP)
-
-			if err == nil {
-				// add the key to the queue for the handler to get
-				queue.Add(key)
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			key, err := cache.MetaNamespaceKeyFunc(newObj)
-			
-			klog.Infof("Update Service: %s", key)
-
-			oldS := oldObj.(*api_v1.Service)
-			newS := newObj.(*api_v1.Service)
-
-			oldFQDN := oldS.Annotations["service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn"]
-			oldIP :=  ""
-			if len(oldS.Status.LoadBalancer.Ingress)>0 { oldIP = oldS.Status.LoadBalancer.Ingress[0].IP }
-
-			oldEntry := oldS.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] == "true" && oldFQDN != "" && oldIP != ""
-
-			newFQDN := newS.Annotations["service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn"]
-			newIP := ""
-			if len(newS.Status.LoadBalancer.Ingress)>0 { newIP =  newS.Status.LoadBalancer.Ingress[0].IP }
-
-			var CreateNew []*endpoint.Endpoint
-			var UpdateOld []*endpoint.Endpoint
-			var UpdateNew []*endpoint.Endpoint
-			var Delete []*endpoint.Endpoint
-
-			if newS.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] == "true" && newFQDN != "" && newIP != "" {
-				if oldEntry {
-					if oldFQDN != newFQDN || oldIP != newIP {
-						UpdateOld = append(UpdateOld, endpoint.NewEndpointWithTTL(oldFQDN, endpoint.RecordTypeA , endpoint.TTL(3600), oldIP))
-						UpdateNew = append(UpdateNew, endpoint.NewEndpointWithTTL(newFQDN, endpoint.RecordTypeA , endpoint.TTL(3600), newIP))
-					}
-				} else {
-					CreateNew = append(CreateNew, endpoint.NewEndpointWithTTL(newFQDN, endpoint.RecordTypeA , endpoint.TTL(3600), newIP))
-				}
-			} else if (oldEntry) {
-				Delete = append(Delete, endpoint.NewEndpointWithTTL(oldFQDN, endpoint.RecordTypeA , endpoint.TTL(3600), oldIP))
-			} 
-
-			if len(CreateNew)>0 || len(UpdateNew)>0 || len(Delete)>0 {
-				p.ApplyChanges(context.Background(), &plan.Changes{ Create:CreateNew, UpdateOld:UpdateOld, UpdateNew:UpdateNew, Delete:Delete })
-			}
-
-			if err == nil {
-				queue.Add(key)
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			// DeletionHandlingMetaNamsespaceKeyFunc is a helper function that allows
-			// us to check the DeletedFinalStateUnknown existence in the event that
-			// a resource was deleted but it is still contained in the index
-			//
-			// this then in turn calls MetaNamespaceKeyFunc
-			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-
-
-			klog.Infof("Delete Service: %s", key)
-
-			oldS := obj.(*api_v1.Service)
-			oldFQDN := oldS.Annotations["service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn"]
-			oldIP :=  ""
-			if len(oldS.Status.LoadBalancer.Ingress)>0 { oldIP = oldS.Status.LoadBalancer.Ingress[0].IP }
-
-			if oldS.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] == "true" && oldFQDN != "" && oldIP != "" {
-				p.ApplyChanges(context.Background(), &plan.Changes{ Delete: 
-					[]*endpoint.Endpoint{ endpoint.NewEndpointWithTTL(oldFQDN, endpoint.RecordTypeA , endpoint.TTL(3600), oldIP) }})
-			}
-
-
-			if err == nil {
-				queue.Add(key)
-			}
-		},
-	})
-
-	// construct the Controller object which has all of the necessary components to
-	// handle logging, connections, informing (listing and watching), the queue,
-	// and the handler
-	controller := Controller{
-		clientset: client,
-		informer:  informer,
-		queue:     queue,
-		handler:   &TestHandler{},
 	}
 
 	// use a channel to synchronize the finalization for a graceful shutdown
@@ -228,7 +165,9 @@ func main() {
 	defer close(stopCh)
 
 	// run the controller loop to process items
-	go controller.Run(stopCh)
+	if err := controller.Run(2, stopCh); err != nil {
+		klog.Fatalf("Error running controller: %s", err.Error())
+	}
 
 	// use a channel to handle OS signals to terminate and gracefully shut
 	// down processing

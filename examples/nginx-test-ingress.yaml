@@ -1,0 +1,21 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: nginx-deployment-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - nginx-deployment.cluster1.labhome.biz
+    secretName: tls-secret
+  rules:
+  - host: nginx-deployment.cluster1.labhome.biz
+    http:
+      paths:
+      - backend:
+          serviceName: nginx-deployment
+          servicePort: 80
+        path: /(.*)
+

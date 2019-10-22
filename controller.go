@@ -10,6 +10,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+
+	"private-dns/handler"
 )
 
 // Controller struct defines how a controller should encapsulate
@@ -17,18 +19,103 @@ import (
 // queueing, and handling of resource changes
 type Controller struct {
 	clientset kubernetes.Interface
-	queue     workqueue.RateLimitingInterface
+
+	// workqueue is a rate limited work queue. This is used to queue work to be
+	// processed instead of performing it as soon as a change happens. This
+	// means we can ensure we only process a fixed amount of resources at a
+	// time, and makes it easy to ensure we are never processing the same item
+	// simultaneously in two different workers.
+	workqueue     workqueue.RateLimitingInterface
 	informer  cache.SharedIndexInformer
-	handler   Handler
+	dnshandler   handler.Handler
+}
+
+
+type queueItem struct {
+	key interface{}
+	changes handler.HashableDNSChanges
+}
+
+// NewController returns a new sample controller
+func NewController(
+	client kubernetes.Interface,
+	serviceInformer cache.SharedIndexInformer,
+	dnshandler handler.Handler) *Controller {
+
+	// The SharedInformer can't track where each controller is up to (because it's shared), so the controller must provide its own queuing
+	// and retrying mechanism (if required). Hence, most Resource Event Handlers simply place items onto a per-consumer workqueue.
+	// Workqueue is provided in the client-go library at client-go/util/workqueue.
+	// A key uses the format <resource_namespace>/<resource_name>
+
+	controller := &Controller{
+		clientset: client,
+		informer:  serviceInformer,
+		workqueue:     workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		dnshandler:   dnshandler,
+	}
+
+
+
+	klog.Info("Setting up event handlers")
+	// add event handlers to handle the three types of events for resources:
+	//  - adding new resources
+	//  - updating existing resources
+	//  - deleting resources
+	serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+
+			key, err := cache.MetaNamespaceKeyFunc(obj)
+			if err != nil {
+				utilruntime.HandleError(err)
+				return
+			}
+			klog.Infof("Updated: %s", key)
+
+			controller.workqueue.Add(queueItem{
+				key: key,
+				changes: controller.dnshandler.ObjectCreated (obj),
+			})
+		},
+		UpdateFunc: func(old, new interface{}) {
+
+			key, err := cache.MetaNamespaceKeyFunc(new)
+			if err != nil {
+				utilruntime.HandleError(err)
+				return
+			}
+			klog.Infof("Updated: %s", key)
+
+			controller.workqueue.Add(queueItem{
+				key: key,
+				changes: controller.dnshandler.ObjectUpdated (old, new),
+			})
+		},
+		DeleteFunc: func(obj interface{}) {
+			key, err := cache.MetaNamespaceKeyFunc(obj)
+			if err != nil {
+				utilruntime.HandleError(err)
+				return
+			}
+			klog.Infof("Delete: %s", key)
+
+			controller.workqueue.Add(queueItem{
+				key: key,
+				changes: controller.dnshandler.ObjectDeleted (obj),
+			})
+		},
+	})
+
+	return controller
+
 }
 
 // Run is the main path of execution for the controller loop
-func (c *Controller) Run(stopCh <-chan struct{}) {
+func (c *Controller) Run(threadiness int,  stopCh <-chan struct{}) error {
 	// handle a panic with logging and exiting
 	defer utilruntime.HandleCrash()
 	// ignore new items in the queue but when all goroutines
 	// have completed existing items then shutdown
-	defer c.queue.ShutDown()
+	defer c.workqueue.ShutDown()
 
 	klog.Info("Controller.Run: initiating")
 
@@ -37,13 +124,21 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 
 	// do the initial synchronization (one time) to populate resources
 	if !cache.WaitForCacheSync(stopCh, c.HasSynced) {
-		utilruntime.HandleError(fmt.Errorf("Error syncing cache"))
-		return
+		return fmt.Errorf("failed to wait for caches to sync")
 	}
-	klog.Info("Controller.Run: cache sync complete")
+
+	klog.Info("Controller.Run: Starting workers")
 
 	// run the runWorker method every second with a stop channel
-	wait.Until(c.runWorker, time.Second, stopCh)
+	for i := 0; i < threadiness; i++ {
+		go wait.Until(c.runWorker, time.Second, stopCh)
+	}
+
+	klog.Info("Started workers")
+	<-stopCh
+	klog.Info("Shutting down workers")
+
+	return nil
 }
 
 // HasSynced allows us to satisfy the Controller interface
@@ -56,25 +151,25 @@ func (c *Controller) HasSynced() bool {
 func (c *Controller) runWorker() {
 	klog.Info("Controller.runWorker: starting")
 
-	// invoke processNextItem to fetch and consume the next change
+	// invoke processNextWorkItem to fetch and consume the next change
 	// to a watched or listed resource
-	for c.processNextItem() {
+	for c.processNextWorkItem() {
 		klog.Info("Controller.runWorker: processing next item")
 	}
 
 	klog.Info("Controller.runWorker: completed")
 }
 
-// processNextItem retrieves each queued item and takes the
+// processNextWorkItem retrieves each queued item and takes the
 // necessary handler action based off of if the item was
 // created or deleted
-func (c *Controller) processNextItem() bool {
-	klog.Info("Controller.processNextItem: start")
+func (c *Controller) processNextWorkItem() bool {
+	klog.Info("Controller.processNextWorkItem: start")
 
 	// fetch the next item (blocking) from the queue to process or
 	// if a shutdown is requested then return out of this to stop
 	// processing
-	key, quit := c.queue.Get()
+	event, quit := c.workqueue.Get()
 
 	// stop the worker loop from running as this indicates we
 	// have sent a shutdown message that the queue has indicated
@@ -83,48 +178,24 @@ func (c *Controller) processNextItem() bool {
 		return false
 	}
 
-	defer c.queue.Done(key)
+	defer c.workqueue.Done(event)
 
-	// assert the string out of the key (format `namespace/name`)
-	keyRaw := key.(string)
+	queueItem := event.(queueItem)
+	err := c.dnshandler.ApplyChanges(queueItem.changes)
 
-	// take the string key and get the object out of the indexer
-	//
-	// item will contain the complex object for the resource and
-	// exists is a bool that'll indicate whether or not the
-	// resource was created (true) or deleted (false)
-	//
-	// if there is an error in getting the key from the index
-	// then we want to retry this particular queue key a certain
-	// number of times (5 here) before we forget the queue key
-	// and throw an error
-	item, exists, err := c.informer.GetIndexer().GetByKey(keyRaw)
-	if err != nil {
-		if c.queue.NumRequeues(key) < 5 {
-			klog.Errorf("Controller.processNextItem: Failed processing item with key %s with error %v, retrying", key, err)
-			c.queue.AddRateLimited(key)
-		} else {
-			klog.Errorf("Controller.processNextItem: Failed processing item with key %s with error %v, no more retries", key, err)
-			c.queue.Forget(key)
-			utilruntime.HandleError(err)
-		}
-	}
-
-	// if the item doesn't exist then it was deleted and we need to fire off the handler's
-	// ObjectDeleted method. but if the object does exist that indicates that the object
-	// was created (or updated) so run the ObjectCreated method
-	//
-	// after both instances, we want to forget the key from the queue, as this indicates
-	// a code path of successful queue key processing
-	if !exists {
-		klog.Infof("Controller.processNextItem: object deleted detected: %s", keyRaw)
-		c.handler.ObjectDeleted(item)
-		c.queue.Forget(key)
+	if err == nil {
+		// No error, reset the ratelimit counters
+		c.workqueue.Forget(event)
+	} else if c.workqueue.NumRequeues(event) < 5 {
+		klog.Errorf("Error processing %s (will retry): %v", queueItem.key, err)
+		c.workqueue.AddRateLimited(queueItem)
 	} else {
-		klog.Infof("Controller.processNextItem: object created detected: %s", keyRaw)
-		c.handler.ObjectCreated(item)
-		c.queue.Forget(key)
+		// err != nil and too many retries
+		klog.Errorf("Error processing %s (giving up): %v", queueItem.key, err)
+		c.workqueue.Forget(queueItem)
+		utilruntime.HandleError(err)
 	}
+
 
 	// keep the worker loop running by returning true
 	return true
