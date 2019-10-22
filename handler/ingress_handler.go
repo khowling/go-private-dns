@@ -34,27 +34,43 @@ func NewIngressHandler(inCluster bool, resourceGroup string, subID string) (*Ing
 // ObjectCreated is called when an object is created
 func (t *IngressHandler) ObjectCreated(obj interface{}) HashableDNSChanges {
 	klog.Info("IngressHandler.ObjectCreated")
-	// assert the type to a Service object to pull out relevant data
+	// assert the type to a Ingress object to pull out relevant data
 	//service := obj.(*extensionsv1beta1.Ingress)
 	//klog.Infof("    ResourceVersion: %s", service.ObjectMeta.ResourceVersion)
 	//klog.Infof("    Ingress Rules: %v", service.Spec.Rules[0].Host)
 	//klog.Infof("    Status: %s", service.Status.LoadBalancer.Ingress[0].IP)
 
+	/*
+	newI := obj.(*extensionsv1beta1.Ingress)
+
+	newFQDN := ""
+	if len(newI.Spec.Rules) > 0 { newFQDN = newI.Spec.Rules[0].Host } 
+
+	newIP := ""
+	if len(newI.Status.LoadBalancer.Ingress)>0 { newIP =  newI.Status.LoadBalancer.Ingress[0].IP }
+
+
+	klog.Infof("IngressHandler.ObjectCreated: Got Ingress, required fqdn=%s ip=%s", newFQDN, newIP)
+	if newI.Annotations["kubernetes.io/ingress.class"] == "nginx" && newFQDN != "" && newIP != "" {
+		klog.Info("IngressHandler: Got new Ingress with fqdn & IP")
+		return HashableDNSChanges{new: DNSEntry{ fqdn: newFQDN, recordtype: endpoint.RecordTypeA , ttl: 3600, ip: newIP}}
+	}
+	*/
 	return HashableDNSChanges{}
 }
 
 // ObjectDeleted is called when an object is deleted
 func (t *IngressHandler) ObjectDeleted(obj interface{}) HashableDNSChanges {
-	klog.Infof("IngressHandler.ObjectDeleted: %s", obj)
-	oldS := obj.(*extensionsv1beta1.Ingress)
+	klog.Info("IngressHandler.ObjectDeleted")
+	oldI := obj.(*extensionsv1beta1.Ingress)
 
 	oldFQDN := ""
-	if len(oldS.Spec.Rules) > 0 { oldFQDN = oldS.Spec.Rules[0].Host } 
+	if len(oldI.Spec.Rules) > 0 { oldFQDN = oldI.Spec.Rules[0].Host } 
 	
 	oldIP :=  ""
-	if len(oldS.Status.LoadBalancer.Ingress)>0 { oldIP = oldS.Status.LoadBalancer.Ingress[0].IP }
+	if len(oldI.Status.LoadBalancer.Ingress)>0 { oldIP = oldI.Status.LoadBalancer.Ingress[0].IP }
 
-	oldEntry := oldS.Annotations["kubernetes.io/ingress.class"] == "nginx" && oldFQDN != "" && oldIP != ""
+	oldEntry := oldI.Annotations["kubernetes.io/ingress.class"] == "nginx" && oldFQDN != "" && oldIP != ""
 
 	if oldEntry {
 		return HashableDNSChanges{  old: DNSEntry{ fqdn: oldFQDN, recordtype: endpoint.RecordTypeA , ttl: 3600, ip: oldIP} } 
@@ -66,29 +82,29 @@ func (t *IngressHandler) ObjectDeleted(obj interface{}) HashableDNSChanges {
 // ObjectUpdated is called when an object is updated
 func (t *IngressHandler) ObjectUpdated(objOld, objNew interface{}) HashableDNSChanges {
 	klog.Info("IngressHandler.ObjectUpdated")
-	oldS := objOld.(*extensionsv1beta1.Ingress)
-	newS := objNew.(*extensionsv1beta1.Ingress)
+	oldI := objOld.(*extensionsv1beta1.Ingress)
+	newI := objNew.(*extensionsv1beta1.Ingress)
 
 	oldFQDN := ""
-	if len(oldS.Spec.Rules) > 0 { oldFQDN = oldS.Spec.Rules[0].Host } 
+	if len(oldI.Spec.Rules) > 0 { oldFQDN = oldI.Spec.Rules[0].Host } 
 
 	oldIP :=  ""
-	if len(oldS.Status.LoadBalancer.Ingress)>0 { oldIP = oldS.Status.LoadBalancer.Ingress[0].IP }
+	if len(oldI.Status.LoadBalancer.Ingress)>0 { oldIP = oldI.Status.LoadBalancer.Ingress[0].IP }
 
-	oldEntry := oldS.Annotations["kubernetes.io/ingress.class"] == "nginx" && oldFQDN != "" && oldIP != ""
+	oldEntry := oldI.Annotations["kubernetes.io/ingress.class"] == "nginx" && oldFQDN != "" && oldIP != ""
 
 	newFQDN := ""
-	if len(newS.Spec.Rules) > 0 { newFQDN = newS.Spec.Rules[0].Host } 
+	if len(newI.Spec.Rules) > 0 { newFQDN = newI.Spec.Rules[0].Host } 
 
 	newIP := ""
-	if len(newS.Status.LoadBalancer.Ingress)>0 { newIP =  newS.Status.LoadBalancer.Ingress[0].IP }
+	if len(newI.Status.LoadBalancer.Ingress)>0 { newIP =  newI.Status.LoadBalancer.Ingress[0].IP }
 
 	changes := HashableDNSChanges{}
 
-	klog.Infof("IngressHandler: Got Service, required fqdn=%s", newFQDN)
+	klog.Infof("IngressHandler.ObjectUpdated: Got Ingress, required fqdn=%s ip=%s", newFQDN, newIP)
 
-	if newS.Annotations["kubernetes.io/ingress.class"] == "nginx" && newFQDN != "" && newIP != "" {
-		klog.Info("IngressHandler: Got internal updated Service with fqdn & IP")
+	if newI.Annotations["kubernetes.io/ingress.class"] == "nginx" && newFQDN != "" && newIP != "" {
+		klog.Info("IngressHandler: Got updated Ingress with fqdn & IP")
 		if oldEntry {
 			if oldFQDN != newFQDN || oldIP != newIP {
 				changes.old = DNSEntry{ fqdn: oldFQDN, recordtype: endpoint.RecordTypeA , ttl: 3600, ip: oldIP}

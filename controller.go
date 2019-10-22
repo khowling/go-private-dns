@@ -69,7 +69,7 @@ func NewController(
 				utilruntime.HandleError(err)
 				return
 			}
-			klog.Infof("Updated Service: %s", key)
+			klog.Infof("Updated: %s", key)
 
 			controller.workqueue.Add(queueItem{
 				key: key,
@@ -83,7 +83,7 @@ func NewController(
 				utilruntime.HandleError(err)
 				return
 			}
-			klog.Infof("Updated Service: %s", key)
+			klog.Infof("Updated: %s", key)
 
 			controller.workqueue.Add(queueItem{
 				key: key,
@@ -96,7 +96,7 @@ func NewController(
 				utilruntime.HandleError(err)
 				return
 			}
-			klog.Infof("Delete Service: %s", key)
+			klog.Infof("Delete: %s", key)
 
 			controller.workqueue.Add(queueItem{
 				key: key,
