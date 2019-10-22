@@ -47,7 +47,7 @@ az role assignment create --assignee-principal-type ServicePrincipal --assignee-
 ### Deploy private-dns into your cluster
 
 
-IMPORTANT: Using the `deploy.yaml` file in the root of this repo, update the file with your `resource group` and `subscription ID`
+IMPORTANT: Using the `deploy.yaml` file in the root of this repo, change the `public-zone` to `true`, and update the file with your `resource group` and `subscription ID`
 
 ```
       containers:
@@ -59,6 +59,7 @@ IMPORTANT: Using the `deploy.yaml` file in the root of this repo, update the fil
         args:
         - --azure-resource-group=<<rg>>
         - --azure-subscription-id=<<subid>>
+        - --public-zone=false
         
 ```
 
