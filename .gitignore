@@ -1,3 +1,7 @@
 azauth.json
 ENV.sh
 private-dns
+
+.vscode
+.devcontainer
+deploy_copy.yaml

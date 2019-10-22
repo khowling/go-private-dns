@@ -1,8 +1,8 @@
 package main
 
 import (
-	"k8s.io/klog/v2"
 	core_v1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 )
 
 // Handler interface contains the methods that are required
