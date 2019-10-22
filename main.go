@@ -1,20 +1,17 @@
-
 package main
 
 // IMPORTANT: requires : export GO111MODULE=on
 import (
-	"os"
 	"context"
-	"fmt"
 	"flag"
-	
+	"fmt"
+	"os"
 
 	// log system
 	"k8s.io/klog/v2"
 	"private-dns/endpoint"
 	"private-dns/plan"
 	"private-dns/provider"
-
 
 	"os/signal"
 	"syscall"
@@ -23,14 +20,12 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
 )
-
-
 
 // retrieve the Kubernetes cluster client from outside of the cluster
 func getKubernetesClient(inCluster bool) kubernetes.Interface {
@@ -71,7 +66,7 @@ func main() {
 
 	rg := flag.String("azure-resource-group", "", "Resource Group containing your Azure Private DNS Zone resource")
 	subID := flag.String("azure-subscription-id", "", "Subscription Id for in-cluster pod-identity")
-	inCluster :=  flag.Bool("in-cluster", true , "are we running in the cluster?")
+	inCluster := flag.Bool("in-cluster", true, "are we running in the cluster?")
 
 	flag.Parse()
 
@@ -79,14 +74,13 @@ func main() {
 
 	if len(*rg) == 0 {
 		fmt.Fprintf(os.Stderr, "error: No resource_group\n")
-        os.Exit(1)
+		os.Exit(1)
 	}
 
 	p, err := provider.NewAzurePrivateProvider(*inCluster, *rg, *subID)
 	if err != nil {
 		klog.Fatalf("failed to create NewAzureProvider: %v", err)
 	}
-
 
 	// get the Kubernetes client for connectivity
 	client := getKubernetesClient(*inCluster)
@@ -108,7 +102,7 @@ func main() {
 			},
 		},
 		&api_v1.Service{}, // the target type (Service)
-		0,             // no resync (period of 0)
+		0,                 // no resync (period of 0)
 		cache.Indexers{},
 	)
 
@@ -132,7 +126,7 @@ func main() {
 			//newS := obj.(*api_v1.Service)
 			//newIP := ""
 			//if len(newS.Status.LoadBalancer.Ingress)>0 { newIP =  newS.Status.LoadBalancer.Ingress[0].IP }
-			
+
 			// This only runs on process Startup, so can confirm here if required?!
 			//klog.Printf("got: %v,  %s", newS.Annotations, newIP)
 
@@ -143,21 +137,25 @@ func main() {
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			key, err := cache.MetaNamespaceKeyFunc(newObj)
-			
+
 			klog.Infof("Update Service: %s", key)
 
 			oldS := oldObj.(*api_v1.Service)
 			newS := newObj.(*api_v1.Service)
 
 			oldFQDN := oldS.Annotations["service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn"]
-			oldIP :=  ""
-			if len(oldS.Status.LoadBalancer.Ingress)>0 { oldIP = oldS.Status.LoadBalancer.Ingress[0].IP }
+			oldIP := ""
+			if len(oldS.Status.LoadBalancer.Ingress) > 0 {
+				oldIP = oldS.Status.LoadBalancer.Ingress[0].IP
+			}
 
 			oldEntry := oldS.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] == "true" && oldFQDN != "" && oldIP != ""
 
 			newFQDN := newS.Annotations["service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn"]
 			newIP := ""
-			if len(newS.Status.LoadBalancer.Ingress)>0 { newIP =  newS.Status.LoadBalancer.Ingress[0].IP }
+			if len(newS.Status.LoadBalancer.Ingress) > 0 {
+				newIP = newS.Status.LoadBalancer.Ingress[0].IP
+			}
 
 			var CreateNew []*endpoint.Endpoint
 			var UpdateOld []*endpoint.Endpoint
@@ -167,18 +165,18 @@ func main() {
 			if newS.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] == "true" && newFQDN != "" && newIP != "" {
 				if oldEntry {
 					if oldFQDN != newFQDN || oldIP != newIP {
-						UpdateOld = append(UpdateOld, endpoint.NewEndpointWithTTL(oldFQDN, endpoint.RecordTypeA , endpoint.TTL(3600), oldIP))
-						UpdateNew = append(UpdateNew, endpoint.NewEndpointWithTTL(newFQDN, endpoint.RecordTypeA , endpoint.TTL(3600), newIP))
+						UpdateOld = append(UpdateOld, endpoint.NewEndpointWithTTL(oldFQDN, endpoint.RecordTypeA, endpoint.TTL(3600), oldIP))
+						UpdateNew = append(UpdateNew, endpoint.NewEndpointWithTTL(newFQDN, endpoint.RecordTypeA, endpoint.TTL(3600), newIP))
 					}
 				} else {
-					CreateNew = append(CreateNew, endpoint.NewEndpointWithTTL(newFQDN, endpoint.RecordTypeA , endpoint.TTL(3600), newIP))
+					CreateNew = append(CreateNew, endpoint.NewEndpointWithTTL(newFQDN, endpoint.RecordTypeA, endpoint.TTL(3600), newIP))
 				}
-			} else if (oldEntry) {
-				Delete = append(Delete, endpoint.NewEndpointWithTTL(oldFQDN, endpoint.RecordTypeA , endpoint.TTL(3600), oldIP))
-			} 
+			} else if oldEntry {
+				Delete = append(Delete, endpoint.NewEndpointWithTTL(oldFQDN, endpoint.RecordTypeA, endpoint.TTL(3600), oldIP))
+			}
 
-			if len(CreateNew)>0 || len(UpdateNew)>0 || len(Delete)>0 {
-				p.ApplyChanges(context.Background(), &plan.Changes{ Create:CreateNew, UpdateOld:UpdateOld, UpdateNew:UpdateNew, Delete:Delete })
+			if len(CreateNew) > 0 || len(UpdateNew) > 0 || len(Delete) > 0 {
+				p.ApplyChanges(context.Background(), &plan.Changes{Create: CreateNew, UpdateOld: UpdateOld, UpdateNew: UpdateNew, Delete: Delete})
 			}
 
 			if err == nil {
@@ -193,19 +191,18 @@ func main() {
 			// this then in turn calls MetaNamespaceKeyFunc
 			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 
-
 			klog.Infof("Delete Service: %s", key)
 
 			oldS := obj.(*api_v1.Service)
 			oldFQDN := oldS.Annotations["service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn"]
-			oldIP :=  ""
-			if len(oldS.Status.LoadBalancer.Ingress)>0 { oldIP = oldS.Status.LoadBalancer.Ingress[0].IP }
-
-			if oldS.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] == "true" && oldFQDN != "" && oldIP != "" {
-				p.ApplyChanges(context.Background(), &plan.Changes{ Delete: 
-					[]*endpoint.Endpoint{ endpoint.NewEndpointWithTTL(oldFQDN, endpoint.RecordTypeA , endpoint.TTL(3600), oldIP) }})
+			oldIP := ""
+			if len(oldS.Status.LoadBalancer.Ingress) > 0 {
+				oldIP = oldS.Status.LoadBalancer.Ingress[0].IP
 			}
 
+			if oldS.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] == "true" && oldFQDN != "" && oldIP != "" {
+				p.ApplyChanges(context.Background(), &plan.Changes{Delete: []*endpoint.Endpoint{endpoint.NewEndpointWithTTL(oldFQDN, endpoint.RecordTypeA, endpoint.TTL(3600), oldIP)}})
+			}
 
 			if err == nil {
 				queue.Add(key)
