@@ -4,7 +4,7 @@ metadata:
   name: internal-app1
   annotations:
     service.beta.kubernetes.io/azure-load-balancer-internal: "true"
-    service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn: "internal-app1.my.akszone.private"
+    service.beta.kubernetes.io/azure-dns-zone-fqdn: "internal-app1.my.akszone.private"
 spec:
   type: LoadBalancer
   ports:

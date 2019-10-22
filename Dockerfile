@@ -46,6 +46,9 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Import the compiled executable from the first stage.
 COPY --from=builder /app /app
 
+# Uncomment only for running container locally
+#COPY ./azauth.json .
+
 # Declare the port on which the webserver will be exposed.
 # As we're going to run the executable as an unprivileged user, we can't bind
 # to ports below 1024.

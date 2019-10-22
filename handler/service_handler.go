@@ -47,7 +47,7 @@ func (t *DNSHandler) ObjectCreated(obj interface{}) HashableDNSChanges {
 func (t *DNSHandler) ObjectDeleted(obj interface{}) HashableDNSChanges {
 	klog.Infof("DNSHandler.ObjectDeleted: %s", obj)
 	oldS := obj.(*core_v1.Service)
-	oldFQDN := oldS.Annotations["service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn"]
+	oldFQDN := oldS.Annotations["service.beta.kubernetes.io/azure-dns-zone-fqdn"]
 	oldIP :=  ""
 	if len(oldS.Status.LoadBalancer.Ingress)>0 { oldIP = oldS.Status.LoadBalancer.Ingress[0].IP }
 
@@ -64,13 +64,13 @@ func (t *DNSHandler) ObjectUpdated(objOld, objNew interface{}) HashableDNSChange
 	oldS := objOld.(*core_v1.Service)
 	newS := objNew.(*core_v1.Service)
 
-	oldFQDN := oldS.Annotations["service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn"]
+	oldFQDN := oldS.Annotations["service.beta.kubernetes.io/azure-dns-zone-fqdn"]
 	oldIP :=  ""
 	if len(oldS.Status.LoadBalancer.Ingress)>0 { oldIP = oldS.Status.LoadBalancer.Ingress[0].IP }
 
 	oldEntry := oldS.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] == "true" && oldFQDN != "" && oldIP != ""
 
-	newFQDN := newS.Annotations["service.beta.kubernetes.io/azure-load-balanver-privatedns-fqdn"]
+	newFQDN := newS.Annotations["service.beta.kubernetes.io/azure-dns-zone-fqdn"]
 	newIP := ""
 	if len(newS.Status.LoadBalancer.Ingress)>0 { newIP =  newS.Status.LoadBalancer.Ingress[0].IP }
 

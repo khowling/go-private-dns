@@ -11,15 +11,9 @@ rules:
 - apiGroups: [""]
   resources: ["services"]
   verbs: ["get","watch","list"]
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get","watch","list"]
 - apiGroups: ["extensions"] 
   resources: ["ingresses"] 
   verbs: ["get","watch","list"]
-- apiGroups: [""]
-  resources: ["nodes"]
-  verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRoleBinding
@@ -50,10 +44,11 @@ spec:
       serviceAccountName: private-dns
       containers:
       - name: private-dns
-        image: khowling/private-dns:0.4
+        image: khowling/private-dns:0.5
         env:
         - name: AZURE_GO_SDK_LOG_LEVEL
           value: "DEBUG"
         args:
         - --azure-resource-group=<<rg>>
         - --azure-subscription-id=<<subid>>
+        - --public-zone=true
