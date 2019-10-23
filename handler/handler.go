@@ -35,26 +35,26 @@ func HashDNSToPlan(changes HashableDNSChanges) (plan.Changes, bool) {
 	applyIt := false
 
 	if changes.old != (DNSEntry{}) && changes.new != (DNSEntry{}) {
-		klog.Info("DNSHandler: ApplyChanges - Update")
+		klog.Infof("HashDNSToPlan: Update  %s  %s", changes.new.fqdn, changes.new.ip)
 		apply = plan.Changes{ 
 			UpdateOld: []*endpoint.Endpoint{ endpoint.NewEndpointWithTTL(changes.old.fqdn, changes.old.recordtype , endpoint.TTL(changes.old.ttl), changes.old.ip) },
 			UpdateNew: []*endpoint.Endpoint{ endpoint.NewEndpointWithTTL(changes.new.fqdn, changes.new.recordtype , endpoint.TTL(changes.old.ttl), changes.new.ip) },
 		}
 		applyIt = true
 	} else if changes.new != (DNSEntry{}) {
-		klog.Info("DNSHandler: ApplyChanges - Add %s  %s", changes.new.fqdn, changes.new.ip)
+		klog.Infof("HashDNSToPlan: Add %s  %s", changes.new.fqdn, changes.new.ip)
 		apply = plan.Changes{ 
 			Create: []*endpoint.Endpoint{ endpoint.NewEndpointWithTTL(changes.new.fqdn, changes.new.recordtype , endpoint.TTL(changes.old.ttl), changes.new.ip) },
 		}
 		applyIt = true
 	} else if changes.old != (DNSEntry{}) {
-		klog.Info("DNSHandler: ApplyChanges - Delete")
+		klog.Info("HashDNSToPlan: Delete")
 		apply = plan.Changes{ 
 			Delete: []*endpoint.Endpoint{ endpoint.NewEndpointWithTTL(changes.old.fqdn, changes.old.recordtype , endpoint.TTL(changes.old.ttl), changes.old.ip) },
 		}
 		applyIt = true
 	} else {
-		klog.Info("DNSHandler: ApplyChanges - Nothing to do")
+		klog.Info("DNSHandler: Nothing to do")
 	}
 	return apply, applyIt
 }

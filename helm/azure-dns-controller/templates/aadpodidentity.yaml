@@ -1,0 +1,8 @@
+apiVersion: "aadpodidentity.k8s.io/v1"
+kind: AzureIdentity
+metadata:
+  name: {{ template "azure-dns-controller.azureidentity" . }}
+spec:
+  type: 0
+  ResourceID: {{ required "managedIdentity.identityResourceId is required" .Values.managedIdentity.identityResourceId }}
+  ClientID: {{ required "managedIdentity.identityClientId is required" .Values.managedIdentity.identityClientId }}

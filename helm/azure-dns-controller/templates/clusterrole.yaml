@@ -1,0 +1,13 @@
+{{- if .Values.rbac.enabled -}}
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: {{ template "azure-dns-controller.fullname" . }}
+rules:
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get","watch","list"]
+- apiGroups: ["extensions"] 
+  resources: ["ingresses"] 
+  verbs: ["get","watch","list"]
+{{- end -}}

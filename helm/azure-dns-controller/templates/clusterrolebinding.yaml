@@ -1,0 +1,14 @@
+{{- if .Values.rbac.enabled -}}
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ template "azure-dns-controller.fullname" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ template "azure-dns-controller.fullname" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ template "azure-dns-controller.serviceaccountname" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end -}}
