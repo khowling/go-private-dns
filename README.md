@@ -4,7 +4,7 @@ To allow AKS Service/Ingress to automatically register a DNS entry in Azure's ma
 
 The project can operate in 1 of 2 modes, see the `examples` folder for yaml examples:
  * if `-public-zone=false` (default), this mode will watch for kubenetes `LoadBalancer` type Services with the annotation to use a internal load balancer (private frontend IP) `service.beta.kubernetes.io/azure-load-balancer-internal: "true"` & the annotation with the required DNS FQDN `service.beta.kubernetes.io/azure-dns-zone-fqdn`.  If a matching `Azure Private DNS zone` zone is found in the resource group indicated in the flag `-azure-resource-group`, a DNS record is created in that zone
- * if `-public-zone=true`, this mode will watch for kubenetes nginx Ingress objects with the annotation  `kubernetes.io/ingress.class: "nginx"`.  If that Ingress includes a hosts FQDN, and a matching `Azure DNS zone` top-level zone is found in the resource group indicated in the flag `-azure-resource-group`, a DNS record is created in that zone
+ * if `-public-zone=true`, this mode will watch for kubenetes nginx Ingress objects with the annotation  `kubernetes.io/ingress.class`.  If that Ingress includes a hosts FQDN, and a matching `Azure DNS zone` top-level zone is found in the resource group indicated in the flag `-azure-resource-group`, a DNS record is created in that zone
 
 
 ## To install into AKS (private zone example)
@@ -52,7 +52,7 @@ IMPORTANT: Using the `deploy.yaml` file in the root of this repo, change the `pu
 ```
       containers:
       - name: private-dns
-        image: khowling/private-dns:0.4
+        image: khowling/private-dns:0.5
         env:
         - name: AZURE_GO_SDK_LOG_LEVEL
           value: "DEBUG"
@@ -126,5 +126,5 @@ $ docker push <repo>/<project>:<version>
 To run the image locally
 
 ```
-docker run --env AZURE_AUTH_LOCATION=./azauth.json khowling/private-dns:0.4  -azure-resource-group="kh-aks" -in-cluster=false -public-zone=false
+docker run --env AZURE_AUTH_LOCATION=./azauth.json khowling/private-dns:0.5  -azure-resource-group="kh-aks" -in-cluster=false -public-zone=false
 ```
